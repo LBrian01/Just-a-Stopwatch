@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Just-a-Stop</title>
+  <style>
+    :root{
+      --bg:#ffffff;
+      --card:#f5f5f6;
+      --muted:#9aa0a6;
+      --text:#222;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      background:var(--bg);
+      color:var(--text);
+      font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", Arial;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .card{
+      background:var(--card);
+      padding:32px;
+      border-radius:12px;
+      width:320px;
+      text-align:center;
+      box-shadow:0 6px 18px rgba(0,0,0,0.04);
+    }
+    h1#brand{
+      margin:0 0 18px 0;
+      font-weight:600;
+      color:var(--text);
+      font-size:20px;
+      letter-spacing:0.6px;
+    }
+    .stack{display:flex;flex-direction:column;gap:12px;align-items:stretch}
+    input{
+      height:44px;
+      padding:10px 12px;
+      border-radius:8px;
+      border:1px solid #e3e3e4;
+      background:transparent;
+      color:var(--text);
+      font-size:14px;
+    }
+    .buttons{display:flex;gap:10px}
+    button{
+      height:44px;
+      border-radius:8px;
+      border:1px solid #ddd;
+      background:#fff;
+      color:var(--text);
+      padding:0 14px;
+      cursor:pointer;
+      font-size:14px;
+    }
+    button:active{transform:translateY(1px)}
+    .hidden{display:none}
+    .clock{
+      font-size:36px;
+      font-weight:600;
+      padding:22px 12px;
+      border-radius:10px;
+      background:#fff;
+      border:1px solid #e6e6e7;
+    }
+    .row{display:flex;justify-content:center}
+  </style>
+</head>
+<body>
+  <main class="card" id="app">
+    <h1 id="brand">Just-a-Stop</h1>
+
+    <form id="auth" class="stack">
+      <input id="email" type="email" placeholder="邮箱" required autocomplete="username">
+      <input id="password" type="password" placeholder="密码" required autocomplete="current-password">
+      <div class="buttons">
+        <button id="btn-register" type="button">注册</button>
+        <button id="btn-login" type="button">登录</button>
+      </div>
+    </form>
+
+    <section id="clockSection" class="stack hidden">
+      <div id="clock" class="clock">00:00:00</div>
+      <div class="row">
+        <button id="btn-logout" type="button">注销</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    async function api(path, method='GET', body) {
+      const opts = { method, headers: {} };
+      if (body) {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify(body);
+      }
+      const res = await fetch(path, opts);
+      return res.ok ? res.json().catch(()=>({})) : { ok: false, status: res.status };
+    }
+
+    const el = id => document.getElementById(id);
+    const authForm = el('auth');
+    const emailInput = el('email');
+    const passwordInput = el('password');
+    const btnRegister = el('btn-register');
+    const btnLogin = el('btn-login');
+    const clockSection = el('clockSection');
+    const clockEl = el('clock');
+    const btnLogout = el('btn-logout');
+
+    let interval = null;
+    let sessionStart = null;
+
+    function formatElapsed(secs){
+      const h = String(Math.floor(secs/3600)).padStart(2,'0');
+      const m = String(Math.floor(secs%3600/60)).padStart(2,'0');
+      const s = String(secs%60).padStart(2,'0');
+      return `${h}:${m}:${s}`;
+    }
+
+    function startClock(startTs){
+      sessionStart = startTs;
+      if (interval) clearInterval(interval);
+      function tick(){
+        const now = Math.floor(Date.now()/1000);
+        const elapsed = Math.max(0, now - sessionStart);
+        clockEl.textContent = formatElapsed(elapsed);
+      }
+      tick();
+      interval = setInterval(tick, 1000);
+      authForm.classList.add('hidden');
+      clockSection.classList.remove('hidden');
+    }
+
+    async function checkSession(){
+      const resp = await api('/session');
+      if (resp && resp.logged) startClock(resp.start_time);
+      else {
+        if (interval) { clearInterval(interval); interval = null; }
+        clockSection.classList.add('hidden');
+        authForm.classList.remove('hidden');
+      }
+    }
+
+    btnRegister.addEventListener('click', async ()=>{
+      const email = emailInput.value.trim();
+      const password = passwordInput.value;
+      if (!email || !password) return;
+      await api('/register','POST',{email,password});
+      const r = await api('/login','POST',{email,password});
+      if (r && r.logged) startClock(r.start_time);
+    });
+
+    btnLogin.addEventListener('click', async ()=>{
+      const email = emailInput.value.trim();
+      const password = passwordInput.value;
+      if (!email || !password) return;
+      const r = await api('/login','POST',{email,password});
+      if (r && r.logged) startClock(r.start_time);
+    });
+
+    btnLogout.addEventListener('click', async ()=>{
+      await api('/logout','POST',{});
+      if (interval) { clearInterval(interval); interval = null; }
+      clockEl.textContent = '00:00:00';
+      clockSection.classList.add('hidden');
+      authForm.classList.remove('hidden');
+      emailInput.value = '';
+      passwordInput.value = '';
+    });
+
+    window.addEventListener('load', ()=>{
+      checkSession();
+    });
+  </script>
+</body>
+</html>
